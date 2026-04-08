@@ -362,19 +362,27 @@ export default function App() {
     }, 50);
   }
 
-  function handleDownload() {
-    if (!result || result.items.length === 0) return;
-    const { items, rMap: rm, oMap: om } = result;
+  function buildResultCsv(items, rm, om) {
     const header = T_COLS.map((c) => c.h);
     const rows = items.map((r) => T_COLS.map((c) => c.fn(r, om, rm)));
     const bom = "\uFEFF";
-    const csv = bom + [header, ...rows]
+    return bom + [header, ...rows]
       .map((row) => row.map((c) => `"${String(c ?? "").replace(/"/g, '""')}"`).join(","))
       .join("\n");
-    downloadCsvBlob(csv, "抽選結果.csv");
+  }
+
+  function handleDownloadByType(resultType, filename) {
+    if (!result || result.items.length === 0) return;
+    const { items, rMap: rm, oMap: om } = result;
+    const filtered = items.filter((r) => r._result === resultType);
+    if (filtered.length === 0) return;
+    const csv = buildResultCsv(filtered, rm, om);
+    downloadCsvBlob(csv, filename);
   }
 
   const items = result?.items || [];
+  const winnerItems = items.filter((r) => r._result === "当選");
+  const reserveItems = items.filter((r) => r._result === "予備");
   const rm = result?.rMap || rMap;
   const om = result?.oMap || oMap;
 
@@ -550,9 +558,14 @@ export default function App() {
                 <SC label="対象日数" value={[...new Set(items.map((r) => r._appDate))].length} accent="#5b8def" />
               </div>
               <div style={{ display: "flex", gap: 10 }}>
-                {items.length > 0 && (
-                  <button onClick={handleDownload} style={{ padding: "10px 24px", fontSize: 13, fontWeight: 600, background: "linear-gradient(135deg,#ff6b35,#e8431f)", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer", boxShadow: "0 2px 12px rgba(255,107,53,0.2)", whiteSpace: "nowrap" }}>
-                    ⬇ CSV ダウンロード
+                {winnerItems.length > 0 && (
+                  <button onClick={() => handleDownloadByType("当選", "抽選結果_当選.csv")} style={{ padding: "10px 18px", fontSize: 13, fontWeight: 600, background: "linear-gradient(135deg,#3ecf8e,#2aa56f)", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer", boxShadow: "0 2px 12px rgba(62,207,142,0.25)", whiteSpace: "nowrap" }}>
+                    ⬇ 当選CSV
+                  </button>
+                )}
+                {reserveItems.length > 0 && (
+                  <button onClick={() => handleDownloadByType("予備", "抽選結果_予備.csv")} style={{ padding: "10px 18px", fontSize: 13, fontWeight: 600, background: "linear-gradient(135deg,#f7c948,#d8a928)", color: "#1d1d1d", border: "none", borderRadius: 6, cursor: "pointer", boxShadow: "0 2px 12px rgba(247,201,72,0.25)", whiteSpace: "nowrap" }}>
+                    ⬇ 予備CSV
                   </button>
                 )}
                 <button onClick={() => { setStep(1); setResult(null); setLogLines([]); }} style={{ padding: "10px 20px", fontSize: 13, background: "rgba(255,255,255,0.04)", color: "#aaa", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6, cursor: "pointer" }}>設定に戻る</button>
@@ -566,36 +579,9 @@ export default function App() {
             </details>
 
             {items.length > 0 && (
-              <div style={{ overflowX: "auto", borderRadius: 8, border: "1px solid rgba(255,255,255,0.06)", maxHeight: "70vh", overflowY: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-                  <thead>
-                    <tr style={{ background: "#0d0d14", position: "sticky", top: 0, zIndex: 1 }}>
-                      {T_COLS.map((c) => (
-                        <th key={c.h} style={{ padding: "10px 12px", textAlign: "left", fontWeight: 500, color: "#666", borderBottom: "1px solid rgba(255,255,255,0.06)", whiteSpace: "nowrap", background: "#0d0d14" }}>{c.h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {items.map((r, i) => {
-                      const newDay = i === 0 || r._appDate !== items[i-1]._appDate;
-                      return (
-                        <tr key={i} style={{ borderBottom: "1px solid rgba(255,255,255,0.03)", background: i%2===0 ? "transparent" : "rgba(255,255,255,0.01)", borderTop: newDay && i > 0 ? "2px solid rgba(255,107,53,0.15)" : "none" }}>
-                          {T_COLS.map((c, ci) => {
-                            const val = c.fn(r, om, rm);
-                            const base = { padding: "8px 12px", whiteSpace: "nowrap" };
-                            if (c.h === "当選区分") {
-                              return (<td key={ci} style={base}><span style={{ padding: "2px 8px", borderRadius: 3, fontSize: 11, fontWeight: 600, background: val === "当選" ? "rgba(62,207,142,0.15)" : "rgba(247,201,72,0.15)", color: val === "当選" ? "#3ecf8e" : "#f7c948" }}>{val}</span></td>);
-                            }
-                            if (c.h === "年齢区分") return (<td key={ci} style={{ ...base, color: String(val).startsWith("U") ? "#5b8def" : "#c084fc" }}>{val}</td>);
-                            if (c.h === "名前") return (<td key={ci} style={{ ...base, fontWeight: 500 }}>{val}</td>);
-                            if (c.h === "世帯キー") return (<td key={ci} style={{ ...base, fontSize: 10, color: "#555", fontFamily: "monospace" }}>{val}</td>);
-                            return (<td key={ci} style={base}>{val || "—"}</td>);
-                          })}
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+              <div style={{ display: "grid", gap: 20 }}>
+                <ResultTable title={`当選一覧 (${winnerItems.length}件)`} items={winnerItems} rm={rm} om={om} />
+                <ResultTable title={`予備一覧 (${reserveItems.length}件)`} items={reserveItems} rm={rm} om={om} />
               </div>
             )}
             {items.length === 0 && (
@@ -612,6 +598,51 @@ export default function App() {
 
 function Sec({ children }) {
   return (<h3 style={{ fontSize: 13, fontWeight: 600, color: "#999", letterSpacing: 0.5, marginBottom: 12, marginTop: 0, display: "flex", alignItems: "center" }}>{children}</h3>);
+}
+
+function ResultTable({ title, items, rm, om }) {
+  return (
+    <section>
+      <h3 style={{ fontSize: 14, color: "#bbb", margin: "0 0 10px" }}>{title}</h3>
+      {items.length === 0 ? (
+        <div style={{ padding: 20, borderRadius: 8, border: "1px solid rgba(255,255,255,0.06)", color: "#666", fontSize: 12 }}>
+          対象データがありません。
+        </div>
+      ) : (
+        <div style={{ overflowX: "auto", borderRadius: 8, border: "1px solid rgba(255,255,255,0.06)", maxHeight: "45vh", overflowY: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+            <thead>
+              <tr style={{ background: "#0d0d14", position: "sticky", top: 0, zIndex: 1 }}>
+                {T_COLS.map((c) => (
+                  <th key={c.h} style={{ padding: "10px 12px", textAlign: "left", fontWeight: 500, color: "#666", borderBottom: "1px solid rgba(255,255,255,0.06)", whiteSpace: "nowrap", background: "#0d0d14" }}>{c.h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((r, i) => {
+                const newDay = i === 0 || r._appDate !== items[i - 1]._appDate;
+                return (
+                  <tr key={i} style={{ borderBottom: "1px solid rgba(255,255,255,0.03)", background: i % 2 === 0 ? "transparent" : "rgba(255,255,255,0.01)", borderTop: newDay && i > 0 ? "2px solid rgba(255,107,53,0.15)" : "none" }}>
+                    {T_COLS.map((c, ci) => {
+                      const val = c.fn(r, om, rm);
+                      const base = { padding: "8px 12px", whiteSpace: "nowrap" };
+                      if (c.h === "当選区分") {
+                        return (<td key={ci} style={base}><span style={{ padding: "2px 8px", borderRadius: 3, fontSize: 11, fontWeight: 600, background: val === "当選" ? "rgba(62,207,142,0.15)" : "rgba(247,201,72,0.15)", color: val === "当選" ? "#3ecf8e" : "#f7c948" }}>{val}</span></td>);
+                      }
+                      if (c.h === "年齢区分") return (<td key={ci} style={{ ...base, color: String(val).startsWith("U") ? "#5b8def" : "#c084fc" }}>{val}</td>);
+                      if (c.h === "名前") return (<td key={ci} style={{ ...base, fontWeight: 500 }}>{val}</td>);
+                      if (c.h === "世帯キー") return (<td key={ci} style={{ ...base, fontSize: 10, color: "#555", fontFamily: "monospace" }}>{val}</td>);
+                      return (<td key={ci} style={base}>{val || "—"}</td>);
+                    })}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
 }
 
 function NI({ label, value, onChange }) {
