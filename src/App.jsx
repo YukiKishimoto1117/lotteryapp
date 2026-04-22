@@ -249,7 +249,7 @@ function runLotteryLogic(csvData, rMap, oMap, keywords, prefs, winU, winO, rsvU,
     if (lotteryMode === "combined") {
       const uWinners = uS.slice(0, winU).map((r) => ({ ...r, _result: "当選" }));
       const uWinnerKeys = new Set(uWinners.map((r) => r._personKey));
-      const combinedPool = [...uS.slice(winU), ...oS];
+      const combinedPool = shuffle([...uS.slice(winU), ...oS], rng);
       const combinedWinners = combinedPool.slice(0, winO).map((r) => ({ ...r, _result: "当選" }));
       const combinedWinnerKeys = new Set(combinedWinners.map((r) => r._personKey));
       const uReserves = uS.slice(winU).filter((r) => !combinedWinnerKeys.has(r._personKey)).slice(0, rsvU).map((r) => ({ ...r, _result: "予備" }));
