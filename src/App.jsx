@@ -150,7 +150,7 @@ const so = {width:"100%",padding:"6px 8px",fontSize:12,boxSizing:"border-box",ba
 /* ================================================================
    Lottery logic (pure function)
    ================================================================ */
-function runLotteryLogic(csvData, rMap, oMap, keywords, prefs, winU, winO, rsvU, rsvO, baseYear, boundary, pwFiles) {
+function runLotteryLogic(csvData, rMap, oMap, keywords, prefs, winU, winO, rsvU, rsvO, baseYear, boundary, pwFiles, lotteryMode) {
   const logs = [];
   const kwMap = {};
   keywords.forEach((kw) => { kwMap[kw.date] = kw.keyword; });
@@ -245,15 +245,29 @@ function runLotteryLogic(csvData, rMap, oMap, keywords, prefs, winU, winO, rsvU,
     const oPool = day.filter((r) => r._ageGroup === oLabel);
     const uS = shuffle(uPool, rng);
     const oS = shuffle(oPool, rng);
-    const res = [
-      ...uS.slice(0, winU).map((r) => ({ ...r, _result: "当選" })),
-      ...oS.slice(0, winO).map((r) => ({ ...r, _result: "当選" })),
-      ...uS.slice(winU, winU + rsvU).map((r) => ({ ...r, _result: "予備" })),
-      ...oS.slice(winO, winO + rsvO).map((r) => ({ ...r, _result: "予備" })),
-    ];
+    let res;
+    if (lotteryMode === "combined") {
+      const uWinners = uS.slice(0, winU).map((r) => ({ ...r, _result: "当選" }));
+      const uWinnerKeys = new Set(uWinners.map((r) => r._personKey));
+      const combinedPool = [...uS.slice(winU), ...oS];
+      const combinedWinners = combinedPool.slice(0, winO).map((r) => ({ ...r, _result: "当選" }));
+      const combinedWinnerKeys = new Set(combinedWinners.map((r) => r._personKey));
+      const uReserves = uS.slice(winU).filter((r) => !combinedWinnerKeys.has(r._personKey)).slice(0, rsvU).map((r) => ({ ...r, _result: "予備" }));
+      const reserveKeys = new Set(uReserves.map((r) => r._personKey));
+      const combinedReserves = combinedPool.slice(winO).filter((r) => !reserveKeys.has(r._personKey)).slice(0, rsvO).map((r) => ({ ...r, _result: "予備" }));
+      res = [...uWinners, ...combinedWinners, ...uReserves, ...combinedReserves];
+      logs.push(`${date}: 候補 ${uLabel}=${uPool.length} 全体=${day.length} → 選出${res.length}名`);
+    } else {
+      res = [
+        ...uS.slice(0, winU).map((r) => ({ ...r, _result: "当選" })),
+        ...oS.slice(0, winO).map((r) => ({ ...r, _result: "当選" })),
+        ...uS.slice(winU, winU + rsvU).map((r) => ({ ...r, _result: "予備" })),
+        ...oS.slice(winO, winO + rsvO).map((r) => ({ ...r, _result: "予備" })),
+      ];
+      logs.push(`${date}: 候補 ${uLabel}=${uPool.length} ${oLabel}=${oPool.length} → 選出${res.length}名`);
+    }
     res.forEach((r) => { wonP.add(r._personKey); wonH.add(r._householdKey); });
     all.push(...res);
-    logs.push(`${date}: 候補 ${uLabel}=${uPool.length} ${oLabel}=${oPool.length} → 選出${res.length}名`);
   });
 
   logs.push("---");
@@ -280,6 +294,7 @@ export default function App() {
   const [rMap, setRMap] = useState({});
   const [oMap, setOMap] = useState({});
   const [kws, setKws] = useState(DEFAULT_KW);
+  const [lotteryMode, setLotteryMode] = useState("separate");
   const [wU, setWU] = useState(2);
   const [wO, setWO] = useState(3);
   const [rU, setRU] = useState(2);
@@ -353,7 +368,7 @@ export default function App() {
     setTimeout(() => {
       try {
         const prefList = prefs.split(",").map((p) => p.trim()).filter(Boolean);
-        const res = runLotteryLogic(csvData, rMap, oMap, kws, prefList, wU, wO, rU, rO, baseY, bound, pwFiles);
+        const res = runLotteryLogic(csvData, rMap, oMap, kws, prefList, wU, wO, rU, rO, baseY, bound, pwFiles, lotteryMode);
         setResult(res); setLogLines(res.logs); setStep(3);
       } catch (e) {
         setLogLines(["エラーが発生しました: " + e.message]);
@@ -435,12 +450,23 @@ export default function App() {
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 32 }}>
               <div>
+                <Sec>抽選モード</Sec>
+                <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+                  {[
+                    { value: "separate", label: `U${bound} / O${bound+1} 別枠` },
+                    { value: "combined", label: `U${bound} 固定 + 全体枠` },
+                  ].map((m) => (
+                    <button key={m.value} onClick={() => setLotteryMode(m.value)} style={{ flex: 1, padding: "8px 12px", fontSize: 12, fontWeight: 600, borderRadius: 6, cursor: "pointer", border: lotteryMode === m.value ? "1px solid #ff6b35" : "1px solid rgba(255,255,255,0.1)", background: lotteryMode === m.value ? "rgba(255,107,53,0.15)" : "rgba(255,255,255,0.03)", color: lotteryMode === m.value ? "#ff6b35" : "#777" }}>
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
                 <Sec>当選人数</Sec>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 24 }}>
                   <NI label={`U${bound} 当選`} value={wU} onChange={setWU} />
-                  <NI label={`O${bound+1} 当選`} value={wO} onChange={setWO} />
+                  <NI label={lotteryMode === "combined" ? "全体 当選" : `O${bound+1} 当選`} value={wO} onChange={setWO} />
                   <NI label={`U${bound} 予備`} value={rU} onChange={setRU} />
-                  <NI label={`O${bound+1} 予備`} value={rO} onChange={setRO} />
+                  <NI label={lotteryMode === "combined" ? "全体 予備" : `O${bound+1} 予備`} value={rO} onChange={setRO} />
                 </div>
                 <Sec>年齢設定</Sec>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 24 }}>
