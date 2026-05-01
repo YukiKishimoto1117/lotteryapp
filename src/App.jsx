@@ -36,6 +36,18 @@ function mkRng(seed) {
   return () => { s = (s * 16807) % 2147483647; return (s - 1) / 2147483646; };
 }
 
+function pickN(pool, n, usedHK) {
+  const picked = [];
+  for (const r of pool) {
+    if (picked.length >= n) break;
+    if (!usedHK.has(r._householdKey)) {
+      picked.push(r);
+      usedHK.add(r._householdKey);
+    }
+  }
+  return picked;
+}
+
 function shuffle(arr, rng) {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
@@ -245,25 +257,22 @@ function runLotteryLogic(csvData, rMap, oMap, keywords, prefs, winU, winO, rsvU,
     const oPool = day.filter((r) => r._ageGroup === oLabel);
     const uS = shuffle(uPool, rng);
     const oS = shuffle(oPool, rng);
+    const dayHK = new Set();
     let res;
     if (lotteryMode === "combined") {
-      const uWinners = uS.slice(0, winU).map((r) => ({ ...r, _result: "当選" }));
-      const uWinnerKeys = new Set(uWinners.map((r) => r._personKey));
-      const combinedPool = shuffle([...uS.slice(winU), ...oS], rng);
-      const combinedWinners = combinedPool.slice(0, winO).map((r) => ({ ...r, _result: "当選" }));
-      const combinedWinnerKeys = new Set(combinedWinners.map((r) => r._personKey));
-      const uReserves = uS.slice(winU).filter((r) => !combinedWinnerKeys.has(r._personKey)).slice(0, rsvU).map((r) => ({ ...r, _result: "予備" }));
-      const reserveKeys = new Set(uReserves.map((r) => r._personKey));
-      const combinedReserves = combinedPool.slice(winO).filter((r) => !reserveKeys.has(r._personKey)).slice(0, rsvO).map((r) => ({ ...r, _result: "予備" }));
+      const uWinners = pickN(uS, winU, dayHK).map((r) => ({ ...r, _result: "当選" }));
+      const allPool = shuffle([...uS, ...oS], rng);
+      const combinedWinners = pickN(allPool, winO, dayHK).map((r) => ({ ...r, _result: "当選" }));
+      const uReserves = pickN(uS, rsvU, dayHK).map((r) => ({ ...r, _result: "予備" }));
+      const combinedReserves = pickN(allPool, rsvO, dayHK).map((r) => ({ ...r, _result: "予備" }));
       res = [...uWinners, ...combinedWinners, ...uReserves, ...combinedReserves];
       logs.push(`${date}: 候補 ${uLabel}=${uPool.length} 全体=${day.length} → 選出${res.length}名`);
     } else {
-      res = [
-        ...uS.slice(0, winU).map((r) => ({ ...r, _result: "当選" })),
-        ...oS.slice(0, winO).map((r) => ({ ...r, _result: "当選" })),
-        ...uS.slice(winU, winU + rsvU).map((r) => ({ ...r, _result: "予備" })),
-        ...oS.slice(winO, winO + rsvO).map((r) => ({ ...r, _result: "予備" })),
-      ];
+      const uWinners = pickN(uS, winU, dayHK).map((r) => ({ ...r, _result: "当選" }));
+      const oWinners = pickN(oS, winO, dayHK).map((r) => ({ ...r, _result: "当選" }));
+      const uReserves = pickN(uS, rsvU, dayHK).map((r) => ({ ...r, _result: "予備" }));
+      const oReserves = pickN(oS, rsvO, dayHK).map((r) => ({ ...r, _result: "予備" }));
+      res = [...uWinners, ...oWinners, ...uReserves, ...oReserves];
       logs.push(`${date}: 候補 ${uLabel}=${uPool.length} ${oLabel}=${oPool.length} → 選出${res.length}名`);
     }
     res.forEach((r) => { wonP.add(r._personKey); wonH.add(r._householdKey); });
